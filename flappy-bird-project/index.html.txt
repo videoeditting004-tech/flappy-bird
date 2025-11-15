@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Flappy Bird Clone</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <link rel="manifest" href="manifest.json">
+</head>
+<body class="bg-gray-800 text-white flex items-center justify-center h-screen">
+    <div class="text-center">
+        <h1 class="text-4xl font-bold mb-4">Flappy Bird</h1>
+        <canvas id="gameCanvas" width="288" height="512" class="bg-blue-300 mx-auto"></canvas>
+        <div id="ui" class="mt-4">
+            <p>Score: <span id="score">0</span></p>
+            <p>High Score: <span id="highScore">0</span></p>
+        </div>
+        <div id="startScreen" class="absolute inset-0 bg-gray-800 bg-opacity-75 flex items-center justify-center flex-col">
+            <h2 class="text-3xl font-bold mb-4">Flappy Bird</h2>
+            <p class="mb-4">Click to Start</p>
+            <button id="startButton" class="bg-green-500 text-white px-4 py-2 rounded">Start Game</button>
+        </div>
+        <div id="gameOverScreen" class="hidden absolute inset-0 bg-gray-800 bg-opacity-75 flex items-center justify-center flex-col">
+            <h2 class="text-3xl font-bold mb-4">Game Over</h2>
+            <p class="mb-4">Your Score: <span id="finalScore">0</span></p>
+            <p class="mb-4">High Score: <span id="finalHighScore">0</span></p>
+            <button id="restartButton" class="bg-green-500 text-white px-4 py-2 rounded">Restart</button>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        const scoreEl = document.getElementById('score');
+        const highScoreEl = document.getElementById('highScore');
+
+        const startScreen = document.getElementById('startScreen');
+        const gameOverScreen = document.getElementById('gameOverScreen');
+
+        const startButton = document.getElementById('startButton');
+        const restartButton = document.getElementById('restartButton');
+
+        const finalScoreEl = document.getElementById('finalScore');
+        const finalHighScoreEl = document.getElementById('finalHighScore');
+
+        // Game variables
+        let bird = { x: 50, y: 150, width: 30, height: 30, velocity: 0 };
+        let gravity = 0.2;
+        let jump = -4.5;
+        let pipes = [];
+        let pipeWidth = 52;
+        let pipeGap = 100;
+        let pipeInterval = 120;
+        let frame = 0;
+        let score = 0;
+        let highScore = localStorage.getItem('flappyHighScore') || 0;
+        let gameState = 'start'; // 'start', 'playing', 'gameOver'
+
+        // Sound effects
+        const jumpSound = new Audio('https://www.soundjay.com/button/sounds/button-16.mp3');
+        const scoreSound = new Audio('https://www.soundjay.com/button/sounds/button-4.mp3');
+        const hitSound = new Audio('https://www.soundjay.com/button/sounds/button-10.mp3');
+
+        // Particle system
+        let particles = [];
+
+        function createParticle(x, y) {
+            for (let i = 0; i < 10; i++) {
+                particles.push({
+                    x: x,
+                    y: y,
+                    size: Math.random() * 3 + 1,
+                    speedX: Math.random() * 3 - 1.5,
+                    speedY: Math.random() * 3 - 1.5,
+                    life: 30
+                });
+            }
+        }
+
+        function drawParticles() {
+            particles.forEach((p, index) => {
+                ctx.fillStyle = 'rgba(255, 255, 0, ' + p.life / 30 + ')';
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+                ctx.fill();
+                p.x += p.speedX;
+                p.y += p.speedY;
+                p.life--;
+                if (p.life <= 0) {
+                    particles.splice(index, 1);
+                }
+            });
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Bird
+            ctx.fillStyle = 'yellow';
+            ctx.fillRect(bird.x, bird.y, bird.width, bird.height);
+
+            if (gameState === 'playing') {
+                bird.velocity += gravity;
+                bird.y += bird.velocity;
+
+                // Collision with bottom
+                if (bird.y + bird.height > canvas.height) {
+                    gameOver();
+                }
+            }
+
+            // Pipes
+            pipes.forEach(pipe => {
+                ctx.fillStyle = 'green';
+                ctx.fillRect(pipe.x, 0, pipeWidth, pipe.top);
+                ctx.fillRect(pipe.x, canvas.height - pipe.bottom, pipeWidth, pipe.bottom);
+
+                if (gameState === 'playing') {
+                    pipe.x -= 2;
+
+                    // Collision detection
+                    if (
+                        bird.x < pipe.x + pipeWidth &&
+                        bird.x + bird.width > pipe.x &&
+                        (bird.y < pipe.top || bird.y + bird.height > canvas.height - pipe.bottom)
+                    ) {
+                        gameOver();
+                    }
+
+                    // Score
+                    if (pipe.x + pipeWidth < bird.x && !pipe.scored) {
+                        score++;
+                        scoreSound.play();
+                        pipe.scored = true;
+                    }
+                }
+            });
+
+            // Remove off-screen pipes
+            pipes = pipes.filter(pipe => pipe.x + pipeWidth > 0);
+
+            // Generate new pipes
+            if (gameState === 'playing' && frame % pipeInterval === 0) {
+                let top = Math.random() * (canvas.height - pipeGap - 100) + 50;
+                pipes.push({ x: canvas.width, top: top, bottom: canvas.height - top - pipeGap, scored: false });
+            }
+
+            drawParticles();
+            updateUI();
+            frame++;
+            if (gameState !== 'gameOver') {
+                requestAnimationFrame(draw);
+            }
+        }
+
+        function updateUI() {
+            scoreEl.textContent = score;
+            highScoreEl.textContent = highScore;
+        }
+
+        function jumpAction() {
+            if (gameState === 'playing') {
+                bird.velocity = jump;
+                jumpSound.play();
+                createParticle(bird.x + bird.width / 2, bird.y + bird.height / 2);
+            }
+        }
+
+        function startGame() {
+            gameState = 'playing';
+            startScreen.classList.add('hidden');
+            gameOverScreen.classList.add('hidden');
+            bird = { x: 50, y: 150, width: 30, height: 30, velocity: 0 };
+            pipes = [];
+            score = 0;
+            frame = 0;
+            draw();
+        }
+
+        function gameOver() {
+            hitSound.play();
+            gameState = 'gameOver';
+            if (score > highScore) {
+                highScore = score;
+                localStorage.setItem('flappyHighScore', highScore);
+            }
+            finalScoreEl.textContent = score;
+            finalHighScoreEl.textContent = highScore;
+            gameOverScreen.classList.remove('hidden');
+        }
+
+        // Event Listeners
+        canvas.addEventListener('click', jumpAction);
+        startButton.addEventListener('click', startGame);
+        restartButton.addEventListener('click', startGame);
+
+        // Initial setup
+        highScoreEl.textContent = highScore;
+        startScreen.classList.remove('hidden');
+
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('sw.js')
+                .then(registration => {
+                    console.log('Service Worker registered with scope:', registration.scope);
+                })
+                .catch(error => {
+                    console.error('Service Worker registration failed:', error);
+                });
+        }
+    </script>
+</body>
+</html>
